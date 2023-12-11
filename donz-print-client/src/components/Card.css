@@ -1,0 +1,17 @@
+* {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.Card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100px;
+    width: 300px;
+    border: 2px solid black;
+    border-radius: 10px;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, .5);
+    background-color: rgba(179, 169, 223, 0.5);
+}
