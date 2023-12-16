@@ -52,6 +52,7 @@ const Home = () => {
             })
             const data = await res.json();
             const imageUrl = data.photo;
+
             if (data) {
                 try {
                     //console.log("Going for 2!  : ", imageUrl);
@@ -88,7 +89,7 @@ const Home = () => {
                                                 'Content-Type': 'application/json'
                                             },
                                             body: JSON.stringify({
-                                                file: imageUrl,
+                                                file: previewImage, // Need to change back
                                                 preview: previewImage,
                                             })
                                         })

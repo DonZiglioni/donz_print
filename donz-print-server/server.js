@@ -3,14 +3,14 @@ import * as dotenv from 'dotenv';
 import cors from 'cors';
 import axios from 'axios';
 import OpenAI from 'openai';
-import { Client, Databases, ID, Query } from "appwrite";
+import { Client, Databases, ID, Query, Storage, Account } from "appwrite";
 import sdk from 'node-appwrite'
 
-const clientT = new sdk.Client();
-clientT
-    .setEndpoint("https://cloud.appwrite.io/v1")
-    .setProject(process.env.APPWRITE_PROJECT_ID)
-    .setKey(process.env.APPWRITE_API_KEY);
+// const clientT = new sdk.Client();
+// clientT
+//     .setEndpoint("https://cloud.appwrite.io/v1")
+//     .setProject(process.env.APPWRITE_PROJECT_ID)
+//     .setKey(process.env.APPWRITE_API_KEY);
 
 dotenv.config()
 const app = express();
@@ -20,9 +20,12 @@ const openai = new OpenAI({
 const client = new Client()
     .setEndpoint("https://cloud.appwrite.io/v1")
     .setProject(process.env.APPWRITE_PROJECT_ID)
+//.setJWT(process.env.APPWRITE_API_KEY)
 
 const databases = new Databases(client);
-const databasesT = new sdk.Databases(clientT);
+const storage = new Storage(client);
+const account = new Account(client);
+//const databasesT = new sdk.Databases(clientT);
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -56,7 +59,7 @@ app.get('/store', async (req, res) => {
             }
         })
         myStore = res.data.result[0]
-        console.log(myStore);
+        //  console.log(myStore);
     } catch (error) {
         console.error(error);
     }
@@ -72,12 +75,32 @@ app.get('/products', async (req, res) => {
             }
         })
         myProducts = res.data.result
-        console.log(myProducts);
+        // console.log(myProducts);
     } catch (error) {
         console.error(error);
     }
     res.status(200).json({ message: "Products Found!", body: myProducts })
 })
+
+app.get('/products/:id', async (req, res) => {
+    let product = req.params
+    //console.log("AHAHAH", product.id);
+    let myProduct = {};
+    try {
+        const res = await axios.get(`https://api.printful.com/store/products/${product.id}`, {
+            headers: {
+                'Authorization': `Bearer ${process.env.PRINTFUL_API_KEY}`
+            }
+        })
+        myProduct = res.data.result
+        // console.log(myProduct);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "Product Found!", body: myProduct })
+})
+
+
 
 app.post('/create', async (req, res) => {
     console.log('Creating New Product', req.body);
@@ -112,8 +135,9 @@ app.post('/create', async (req, res) => {
     try {
         const res = await fetch('https://api.printful.com/store/products', options)
         data = await res.json()
+        console.log("DATA", data);
         // res.send(data)
-        console.log("Res: ", res, "Req: ", req);
+        // console.log("Res: ", res, "Req: ", req);
     } catch (error) {
         console.error(error);
     }
@@ -232,12 +256,91 @@ app.get('/database', async (req, res) => {
             process.env.APPWRITE_COLLECTION_ID,
         )
         data = res.documents
-        console.log(res.documents);
+        // console.log(res.documents);
     } catch (error) {
         console.error(error);
     }
     res.status(200).json({ message: "Data Found", body: data })
 })
+
+app.get('/storage', async (req, res) => {
+    let files;
+    try {
+        const res = await storage.listFiles(
+            process.env.APPWRITE_BUCKET_ID,
+        )
+        files = res.files
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "Data Found", body: files })
+})
+
+app.post('/signup', async (req, res) => {
+    let data;
+    try {
+        const res = await account.create(
+            ID.unique(),
+            req.body.userEmail,
+            req.body.userPassword,
+        )
+        data = res
+        // console.log("From Server: ", res);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "Created User!", body: data })
+})
+
+app.post('/login', async (req, res) => {
+    console.log(req.body);
+    let data;
+    try {
+        const res = await account.createEmailSession(
+            req.body.userEmail,
+            req.body.userPassword,
+        )
+        data = res
+        console.log("From Server: ", res);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "User Logged In!", body: data })
+})
+
+app.get('/account', async (req, res) => {
+    console.log("get");
+    let data = null;
+    try {
+        const res = await account.get()
+        if (res.data) {
+            data = res
+        }
+        console.log("From Server: ", res);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "Current User: ", body: data })
+})
+
+app.get('/logout', async (req, res) => {
+
+    let data;
+    try {
+        const res = await account.deleteSession('current')
+        data = res
+        console.log("From Server: ", res);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "User Logged Out!", body: data })
+})
+
+
+
+
+
+
 
 
 app.listen(8080, () => {
