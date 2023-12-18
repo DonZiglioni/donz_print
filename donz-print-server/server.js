@@ -5,7 +5,9 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import { Client, Databases, ID, Query, Storage, Account } from "appwrite";
 import sdk from 'node-appwrite'
-
+import { v4 as uuidv4 } from 'uuid';
+import Stripe from 'stripe';
+const stripe = new Stripe('sk_test_51OO4SfHPslPtEnTBAV3v0mjdolfDblA6ueLbK0DK8FkvzEt15pJOka3Hm0JJRYotUQQOUpuV41EE5Uud69bYktaq00OM98mtJq');
 // const clientT = new sdk.Client();
 // clientT
 //     .setEndpoint("https://cloud.appwrite.io/v1")
@@ -41,7 +43,7 @@ app.get('/', (req, res) => {
 app.get('/categories', async (req, res) => {
     let categories;
     try {
-        const res = await axios.get('https://api.printful.com/categories')
+        const res = await axios.get('https://api.printful.com/warehouse/products/534')
         categories = res.data.result.categories
 
     } catch (error) {
@@ -99,8 +101,6 @@ app.get('/products/:id', async (req, res) => {
     }
     res.status(200).json({ message: "Product Found!", body: myProduct })
 })
-
-
 
 app.post('/create', async (req, res) => {
     console.log('Creating New Product', req.body);
@@ -209,6 +209,89 @@ app.get('/mockup/:task', async (req, res) => {
     res.status(200).json({ message: "Mockups Saved!", images: myMockups })
 })
 
+app.post('/draftorder', async (req, res) => {
+    console.log('Drafting Order...');
+
+    let cartItems = req.body.body.cartItems
+    let orderDetails = req.body.body.orderDetails
+    let itemSpread = [];
+    let cartTotal = 0;
+
+    cartItems.map((item) => {
+        cartTotal = cartTotal + item.retail_price;
+        console.log("Or maaaybe..", item.files[1].filename);
+        itemSpread.push({
+            "id": item.sync_product_id,
+            //"external_id": item.external_id,
+            "variant_id": item.variant_id,
+            "sync_variant_id": item.id,
+            //"external_variant_id": cartItems.external_id.toString(),
+            //"warehouse_product_variant_id": 534,
+            // "product_template_id": item.product.variant_id,
+            // "external_product_id": "template-123",
+            "quantity": 1,
+            "price": "15.95",
+            "retail_price": item.retail_price,
+            "name": item.name,
+            "product": {
+                "variant_id": item.product.variant_id,
+                "product_id": item.product.product_id,
+                "image": item.files[1].filename,
+                "name": "Jigsaw Puzzle (250 Pieces)"
+            },
+            "files": item.files,
+            // "options": [],
+            "sku": item.sku,
+            "discontinued": false,
+            "out_of_stock": false
+        })
+    })
+
+    const options = {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${process.env.PRINTFUL_API_KEY}`,
+            "Content-Type": "application/json",
+            "PF-Store-Id": '12741472'
+        },
+        body: JSON.stringify({
+            "shipping": "STANDARD",
+            "recipient": {
+                "name": orderDetails.firstName,
+                "company": orderDetails.lastName,
+                "address1": "4980 Happy Pl.",
+                "address2": orderDetails.address2,
+                "city": "Bradenton",
+                "state_code": "FL",
+                "state_name": "Florida",
+                "country_code": "US",
+                "country_name": "united States",
+                "zip": 34208,
+                //"phone": "",
+                "email": orderDetails.email,
+            },
+            "items": itemSpread,
+            "retail_costs": cartTotal,
+        }),
+    }
+    let data;
+
+
+    try {
+        const res = await fetch('https://api.printful.com/orders', options)
+        data = await res.json()
+        // res.send(data)"gt-608666498"gt-608673738
+        console.log("ResPoNsE: ", data);
+        // taskKey = data.result.task_key;
+        // console.log("Task Key: ", taskKey);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ message: "Created Order Draft", body: data })
+})
+
+
+
 //  *********  OPEN AI SERVER FUNCTIONS  **********
 
 app.post('/imagination', async (req, res) => {
@@ -293,7 +376,7 @@ app.post('/signup', async (req, res) => {
 })
 
 app.post('/login', async (req, res) => {
-    console.log(req.body);
+    //console.log(req.body);
     let data;
     try {
         const res = await account.createEmailSession(
@@ -301,7 +384,7 @@ app.post('/login', async (req, res) => {
             req.body.userPassword,
         )
         data = res
-        console.log("From Server: ", res);
+        // console.log("From Server: ", res);
     } catch (error) {
         console.error(error);
     }
@@ -309,16 +392,16 @@ app.post('/login', async (req, res) => {
 })
 
 app.get('/account', async (req, res) => {
-    console.log("get");
+    // console.log("get");
     let data = null;
     try {
         const res = await account.get()
         if (res.data) {
             data = res
         }
-        console.log("From Server: ", res);
+        // console.log("From Server: ", res);
     } catch (error) {
-        console.error(error);
+        //console.error(error);
     }
     res.status(200).json({ message: "Current User: ", body: data })
 })
@@ -329,16 +412,34 @@ app.get('/logout', async (req, res) => {
     try {
         const res = await account.deleteSession('current')
         data = res
-        console.log("From Server: ", res);
+        // console.log("From Server: ", res);
     } catch (error) {
         console.error(error);
     }
     res.status(200).json({ message: "User Logged Out!", body: data })
 })
 
+//  *********  STRIPE SERVER FUNCTIONS  **********
 
-
-
+app.post('/intent', async (req, res) => {
+    let data;
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: req.body.product.cartTotal,
+            currency: 'usd',
+            automatic_payment_methods: {
+                enabled: true,
+            },
+            receipt_email: req.body.token.email,
+            description: req.body.product.name,
+        });
+        data = paymentIntent
+        console.log("From Server: ", data);
+    } catch (error) {
+        console.error(error);
+    }
+    res.status(200).json({ clientSecret: data.client_secret })
+})
 
 
 
