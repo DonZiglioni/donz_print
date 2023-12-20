@@ -13,7 +13,8 @@ const Home = () => {
     const [storeInfo, setStoreInfo] = useState({});
     const [products, setProducts] = useState([]);
     const [images, setImages] = useState([]);
-    const [input, setInput] = useState('')
+    const [input, setInput] = useState('');
+    const [display, setDisplay] = useState('');
 
     useEffect(() => {
         const getStoreInfo = async () => {
@@ -27,7 +28,7 @@ const Home = () => {
         const getImages = async () => {
             const res = await axios.get('http://localhost:8080/database')
             let data = res.data.body
-            console.log(data);
+            //console.log(data);
             setImages(data)
         }
         getImages()
@@ -35,84 +36,109 @@ const Home = () => {
         getProducts()
     }, [])
 
-    const createPic = async () => {
+    // const createPic = async () => {
+    //     if (!input) {
+    //         return alert("Please Enter a Prompt")
+    //     }
+
+    //     try {
+    //         const res = await fetch('http://localhost:8080/imagination', {
+    //             method: 'POST',
+    //             headers: {
+    //                 'Content-Type': 'application/json'
+    //             },
+    //             body: JSON.stringify({
+    //                 input,
+    //             })
+    //         })
+    //         const data = await res.json();
+    //         const imageUrl = data.photo;
+
+    //         if (data) {
+    //             try {
+    //                 //console.log("Going for 2!  : ", imageUrl);
+    //                 const response = await fetch('http://localhost:8080/generate', {
+    //                     method: 'POST',
+    //                     headers: {
+    //                         'Content-Type': 'application/json'
+    //                     },
+    //                     body: JSON.stringify({
+    //                         imageUrl,
+    //                     })
+    //                 })
+    //                 const genData = await response.json();
+    //                 if (genData) {
+    //                     console.log("Wait for 10 seconds...");
+    //                     setTimeout(async () => {
+    //                         try {
+    //                             const task = genData.task_key;
+    //                             const response = await fetch(`http://localhost:8080/mockup/${task}`, {
+    //                                 method: 'GET',
+    //                                 headers: {
+    //                                     'Content-Type': 'application/json'
+    //                                 },
+    //                             })
+    //                             const mockups = await response.json();
+    //                             console.log(mockups.images);
+    //                             if (mockups) {
+    //                                 const previewImage = mockups.images.mockup_url
+    //                                 try {
+    //                                     console.log("Going for 4!  : ", previewImage);
+    //                                     const response = await fetch('http://localhost:8080/create', {
+    //                                         method: 'POST',
+    //                                         headers: {
+    //                                             'Content-Type': 'application/json'
+    //                                         },
+    //                                         body: JSON.stringify({
+    //                                             file: previewImage, // Need to change back
+    //                                             preview: previewImage,
+    //                                         })
+    //                                     })
+    //                                     const created = await response.json();
+    //                                     console.log(created);
+    //                                 } catch (error) {
+    //                                     console.log(error)
+    //                                 }
+    //                             }
+    //                         } catch (error) {
+    //                             console.log(error)
+    //                         }
+    //                     }, 15000)
+    //                 }
+    //             } catch (error) {
+    //                 console.log(error)
+    //             }
+    //         }
+    //     } catch (error) {
+    //         console.log(error)
+    //     } finally {
+    //         setInput('')
+    //     }
+    // }
+
+    // const downloadFile = async () => {
+    //     console.log("download");
+    //     const res = await axios.get('http://localhost:8080/upload/text');
+    //     console.log(res);
+    // }
+
+    const createPrompt = async () => {
         if (!input) {
             return alert("Please Enter a Prompt")
         }
-
-        try {
-            const res = await fetch('http://localhost:8080/imagination', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    input,
-                })
+        const res = await fetch('http://localhost:8080/createimageprompt', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                input,
             })
-            const data = await res.json();
-            const imageUrl = data.photo;
-
-            if (data) {
-                try {
-                    //console.log("Going for 2!  : ", imageUrl);
-                    const response = await fetch('http://localhost:8080/generate', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            imageUrl,
-                        })
-                    })
-                    const genData = await response.json();
-                    if (genData) {
-                        console.log("Wait for 10 seconds...");
-                        setTimeout(async () => {
-                            try {
-                                const task = genData.task_key;
-                                const response = await fetch(`http://localhost:8080/mockup/${task}`, {
-                                    method: 'GET',
-                                    headers: {
-                                        'Content-Type': 'application/json'
-                                    },
-                                })
-                                const mockups = await response.json();
-                                console.log(mockups.images);
-                                if (mockups) {
-                                    const previewImage = mockups.images.mockup_url
-                                    try {
-                                        console.log("Going for 4!  : ", previewImage);
-                                        const response = await fetch('http://localhost:8080/create', {
-                                            method: 'POST',
-                                            headers: {
-                                                'Content-Type': 'application/json'
-                                            },
-                                            body: JSON.stringify({
-                                                file: previewImage, // Need to change back
-                                                preview: previewImage,
-                                            })
-                                        })
-                                        const created = await response.json();
-                                        console.log(created);
-                                    } catch (error) {
-                                        console.log(error)
-                                    }
-                                }
-                            } catch (error) {
-                                console.log(error)
-                            }
-                        }, 15000)
-                    }
-                } catch (error) {
-                    console.log(error)
-                }
-            }
-        } catch (error) {
-            console.log(error)
-        } finally {
-            setInput('')
-        }
+        })
+        const data = await res.json();
+        console.log(data);
+        // setDisplay(data.content)
+        // data.content.split(/\r?\n/)
     }
 
     return (
@@ -125,10 +151,11 @@ const Home = () => {
                     alignItems: 'center',
                     flexDirection: 'column',
                 }}>
-                <button onClick={createPic}>click</button>
+                <button onClick={createPrompt}>click</button>
                 <input type='text' value={input} onChange={(e) => setInput(e.target.value)} placeholder='Enter Prompt' style={{ width: '400px' }}></input>
                 <Row>
                     <Col> <h1>{storeInfo.name}</h1></Col>
+                    <Button >Download File</Button>
                 </Row>
                 <Row >
                     <Col >
@@ -139,7 +166,7 @@ const Home = () => {
                             flexDirection: 'row',
                             flexWrap: 'wrap'
                         }} >
-                            <Card.Body>New Items Added Daily!</Card.Body>
+                            <Card.Body>{display}</Card.Body>
                             {images.map((img, index) => {
                                 return <Card.Img
                                     key={index}

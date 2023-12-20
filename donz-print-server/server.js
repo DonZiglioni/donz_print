@@ -4,35 +4,68 @@ import cors from 'cors';
 import axios from 'axios';
 import OpenAI from 'openai';
 import { Client, Databases, ID, Query, Storage, Account } from "appwrite";
-import sdk from 'node-appwrite'
+import sdk, { InputFile } from 'node-appwrite'
+import { File } from 'node:buffer';
+import Path from 'node:path';
+import * as fs from 'node:fs';
+import { pipeline } from 'node:stream';
 import { v4 as uuidv4 } from 'uuid';
 import Stripe from 'stripe';
+import { log } from 'console';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import turl from 'turl'
+//import ctx = require.context('./../assets/images/footer/game-providers', false, /\.png$/)
+
+
+
 const stripe = new Stripe('sk_test_51OO4SfHPslPtEnTBAV3v0mjdolfDblA6ueLbK0DK8FkvzEt15pJOka3Hm0JJRYotUQQOUpuV41EE5Uud69bYktaq00OM98mtJq');
-// const clientT = new sdk.Client();
-// clientT
-//     .setEndpoint("https://cloud.appwrite.io/v1")
-//     .setProject(process.env.APPWRITE_PROJECT_ID)
-//     .setKey(process.env.APPWRITE_API_KEY);
+
+
+const clientT = new sdk.Client()
+    .setEndpoint("https://cloud.appwrite.io/v1")
+    .setProject(process.env.APPWRITE_PROJECT_ID)
+    .setKey(process.env.APPWRITE_API_KEY);
 
 dotenv.config()
 const app = express();
-const openai = new OpenAI({
-    apiKey: `${process.env.OPENAI_API_KEY}`,
-});
-const client = new Client()
-    .setEndpoint("https://cloud.appwrite.io/v1")
-    .setProject(process.env.APPWRITE_PROJECT_ID)
-//.setJWT(process.env.APPWRITE_API_KEY)
-
-const databases = new Databases(client);
-const storage = new Storage(client);
-const account = new Account(client);
-//const databasesT = new sdk.Databases(clientT);
-
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'))
 
+//  Config Open AI
+const openai = new OpenAI({
+    apiKey: `${process.env.OPENAI_API_KEY}`,
+});
+const chatURL = 'https://api.openai.com/v1/chat/completions';
+
+// Config Appwrite
+const client = new Client()
+    .setEndpoint("https://cloud.appwrite.io/v1")
+    .setProject(process.env.APPWRITE_PROJECT_ID)
+// .setJWT(process.env.APPWRITE_API_KEY)
+const databases = new Databases(client);
+const storage = new sdk.Storage(clientT);
+const account = new Account(client);
+
+//  ************  Shorten URL for Printful Requirements   ***********
+
+let newLink;
+const findFile = async (newFile, oldUrl) => {
+    fs.readdir('./files', (error, files) => {
+        for (let file of files) {
+            if (file === newFile) {
+                turl.shorten(oldUrl).then((link) => {
+                    console.log("Link: ", link);
+                    newLink = link;
+                    return link;
+                })
+            }
+        }
+    })
+}
+
+//  ************  Hello From Home Page   ***********
 
 app.get('/', (req, res) => {
     res.status(200).json({ message: "Ayo! -From Don Z!" })
@@ -201,7 +234,7 @@ app.get('/mockup/:task', async (req, res) => {
                 'Authorization': `Bearer ${process.env.PRINTFUL_API_KEY}`
             }
         })
-        myMockups = res.data.result.mockups[0]
+        myMockups = await res.data.result.mockups[0]
         console.log(myMockups);
     } catch (error) {
         console.error(error);
@@ -294,6 +327,81 @@ app.post('/draftorder', async (req, res) => {
 
 //  *********  OPEN AI SERVER FUNCTIONS  **********
 
+app.post('/createimageprompt', async (req, res) => {
+    console.log('Generating Image Prompts, Saying...', req.body)
+    let promptSplit;
+    let finalPrompts = []
+
+    const savePrompts = async (message) => {
+        const res = await databases.createDocument(
+            process.env.APPWRITE_DATABASE_ID,
+            process.env.APPWRITE_PROMPT_COLLECTION_ID,
+            ID.unique(),
+            {
+                text_prompts: message,
+            }
+        )
+        console.log("Saved Prompt: ", message, res);
+    }
+
+    const getBusy = async (i) => {
+        try {
+            const res = await fetch('http://localhost:8080/imagination', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    input: finalPrompts[i],
+                })
+            })
+            const data = await res.json();
+            const imageUrl = await data.photo;
+            console.log("We have an image URL: ", imageUrl);
+        } catch (error) {
+            console.log(error);
+        }
+    }
+
+    try {
+        const response = await openai.chat.completions.create({
+            messages: [{ role: "user", content: req.body.input }],
+            model: "gpt-3.5-turbo",
+            max_tokens: 500,
+        });
+        const msg = response.choices[0].message;
+        promptSplit = msg.content.split(/\r?\n/);
+
+        promptSplit.forEach((line) => {
+            if (line.length > 100) {
+                finalPrompts.push(line)
+                savePrompts(line)
+            }
+        })
+
+        if (finalPrompts.length > 0) {
+            let index = 0;
+            const interval = setInterval(async () => {
+                await getBusy(index)
+                if (index === finalPrompts.length - 1) {
+                    clearInterval(interval)
+                }
+                index += 1;
+            }, 60000);
+        }
+
+        let data = {
+            prompts: finalPrompts,
+        }
+
+        res.send(data);
+        console.log(data);
+    } catch (error) {
+        console.error(error);
+    }
+})
+
+
 app.post('/imagination', async (req, res) => {
     console.log('Generating Image... Please Hold');
     let collectImage;
@@ -309,16 +417,83 @@ app.post('/imagination', async (req, res) => {
             response_format: 'url'
         })
         const image = response.data[0].url;
+        const imageName = `${uuidv4()}.png`
+        const newPath = Path.resolve(`C:`, 'files', imageName);
+        const responz = await axios.get(image, { responseType: 'stream' });
+        await responz.data.pipe(fs.createWriteStream(newPath))
 
         // console.log("IMAGE: ", image);
-        const saveImage = await databases.createDocument(
-            process.env.APPWRITE_DATABASE_ID,
-            process.env.APPWRITE_COLLECTION_ID,
-            ID.unique(),
-            {
-                image_url: image,
+        // const saveImage = await databases.createDocument(
+        //     process.env.APPWRITE_DATABASE_ID,
+        //     process.env.APPWRITE_COLLECTION_ID,
+        //     ID.unique(),
+        //     {
+        //         image_url: image,
+        //     }
+        // )
+
+        if (image) {
+            try {
+                const imageUrl = image;
+
+                const response = await fetch('http://localhost:8080/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        imageUrl,
+                    })
+                })
+                const genData = await response.json();
+
+                if (genData) {
+                    console.log("Wait for 10 seconds...");
+                    setTimeout(async () => {
+
+                        const genLink = await findFile(imageName, imageUrl)
+                        console.log("GEN LINK:", genLink);
+                        try {
+                            const task = genData.task_key;
+                            const response = await fetch(`http://localhost:8080/mockup/${task}`, {
+                                method: 'GET',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                            })
+                            const mockups = await response.json();
+                            //console.log(mockups.images);
+                            if (mockups) {
+                                const previewImage = await mockups.images.mockup_url
+                                // console.log("IS THIS STILL THE IMAGE:  ", image);
+                                try {
+                                    console.log("Going for 4!  : ", previewImage);
+                                    const response = await fetch('http://localhost:8080/create', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json'
+                                        },
+                                        body: JSON.stringify({
+                                            file: newLink,
+                                            preview: previewImage,
+                                        })
+                                    })
+                                    const created = await response.json();
+                                    console.log("Product Added To Store!", created);
+                                } catch (error) {
+                                    console.log(error)
+                                }
+                            }
+                        } catch (error) {
+                            console.log(error)
+                        }
+                    }, 20000)
+                }
+            } catch (error) {
+                console.log(error);
             }
-        )
+        }
+
         //console.log("Saved Something!", saveImage);
         res.status(200).json({ message: "Success!", photo: image })
     } catch (error) {
@@ -419,6 +594,33 @@ app.get('/logout', async (req, res) => {
     res.status(200).json({ message: "User Logged Out!", body: data })
 })
 
+app.get('/upload/image', async (req, res) => {
+    //const newUploadId = ID.unique()
+
+    const downloadUrl = async () => {
+        const url = 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
+        const newPath = Path.resolve(`C:`, 'files', 'image2.png');
+        const response = await axios.get(url, { responseType: 'stream' });
+        response.data.pipe(fs.createWriteStream(newPath))
+
+        return new Promise((resolve, reject) => {
+            response.data.on('end', () => {
+                resolve();
+            })
+            response.data.on('error', (err) => {
+                reject(err)
+            })
+        })
+    }
+    await downloadUrl()
+
+    res.status(200).json({ message: "Saved Blob!", })
+
+})
+
+
+
+
 //  *********  STRIPE SERVER FUNCTIONS  **********
 
 app.post('/intent', async (req, res) => {
@@ -441,7 +643,7 @@ app.post('/intent', async (req, res) => {
     res.status(200).json({ clientSecret: data.client_secret })
 })
 
-
+//   ****************       *******************
 
 
 app.listen(8080, () => {
